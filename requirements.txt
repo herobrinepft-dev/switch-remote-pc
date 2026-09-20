@@ -1,0 +1,7 @@
+flask
+aiortc
+av
+mss
+numpy
+pyautogui
+soundcard>=0.4.4

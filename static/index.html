@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0f">
+<title>PC Remote</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#0d0d0f;color:#fff;overflow:hidden;overscroll-behavior:none;
+  font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+
+/* --- zone vidéo --- */
+#stage{position:relative;flex:1 1 auto;min-height:0;background:#000}
+#video,#frame{width:100%;height:100%;object-fit:contain;display:block;background:#000;
+  touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+#video.hide,#frame.hide{display:none}
+#status{position:absolute;left:8px;top:8px;z-index:3;background:#000b;padding:5px 9px;border-radius:8px;
+  font-size:12px;pointer-events:none;max-width:70%}
+#status.ok{color:#86efac}#status.warn{color:#fde68a}#status.bad{color:#fca5a5}
+#tools{position:absolute;right:8px;top:8px;z-index:3;display:flex;gap:6px}
+#tools button{width:42px;height:38px;font-size:18px;background:#000b;border-radius:10px}
+#tools button.off{opacity:.55}
+#tools button.on{background:#3b82f6}
+#overlay{position:absolute;inset:0;z-index:2;display:none;align-items:center;justify-content:center;
+  background:#000a;text-align:center}
+#overlay.show{display:flex}
+#overlay button{width:auto;padding:16px 26px;font-size:19px;background:#3b82f6;border-radius:14px}
+
+/* --- menu de choix d'ecran --- */
+#screenMenu{position:absolute;right:8px;top:52px;z-index:4;background:#18181b;border-radius:12px;
+  padding:8px;min-width:220px;max-width:80vw;box-shadow:0 8px 24px #000a;border:1px solid #2a2a2f}
+#screenMenu[hidden]{display:none}
+#screenMenu .sm-title{font-size:12px;color:#9ca3af;padding:4px 6px 8px}
+.sm-item{display:block;width:100%;text-align:left;padding:11px 13px;background:#2a2a2f;
+  border-radius:8px;margin-bottom:6px;font-size:14px;font-weight:normal;white-space:normal;
+  overflow:visible;text-overflow:clip;color:#fff;border:0;font-family:inherit}
+.sm-item:last-child{margin-bottom:0}
+.sm-item.on{background:#3b82f6}
+.sm-item:active{background:#55555c}
+
+/* --- barre de commandes --- */
+#bar{flex:0 0 auto;padding:7px;display:grid;grid-template-columns:repeat(6,1fr);gap:6px;
+  grid-auto-rows:clamp(36px,6.2vh,50px);background:#0d0d0f;max-height:46vh;overflow-y:auto}
+#bar[hidden]{display:none}
+button,input{border:0;border-radius:12px;font-size:16px;min-width:0;font-family:inherit}
+button{background:#2a2a2f;color:#fff;font-weight:bold;touch-action:manipulation;padding:0 4px;
+  overflow:hidden;white-space:nowrap}
+button:active{background:#55555c}
+button.on{background:#3b82f6}
+input{padding:0 10px;background:#1c1c20;color:#fff;grid-column:span 4}
+.w2{grid-column:span 2}
+
+/* --- mode jeu (ZQSD) --- */
+#gamepad{flex:0 0 auto;padding:10px;background:#0d0d0f;display:flex;gap:20px;align-items:center;
+  justify-content:center;flex-wrap:wrap}
+#gamepad[hidden]{display:none}
+.gp-group{display:flex;gap:14px;align-items:center;flex-wrap:wrap;justify-content:center}
+.gp-move{display:grid;grid-template-columns:repeat(3,64px);grid-template-rows:repeat(2,64px);
+  grid-template-areas:". u ." "l d r";gap:8px}
+.gp-move .gp-key{font-size:24px}
+.gp-key{background:#2a2a2f;color:#fff;font-weight:bold;border-radius:14px;padding:0 8px;
+  min-width:64px;min-height:64px;font-size:16px;touch-action:none;user-select:none;
+  -webkit-user-select:none;-webkit-touch-callout:none;border:0}
+.gp-key.on,.gp-key:active{background:#3b82f6}
+.gp-key[data-k="space"]{min-width:180px}
+#btnLock{min-width:0;min-height:0;padding:8px 14px;font-size:14px;border-radius:10px;
+  background:#1c1c20;color:#fde68a;font-weight:normal;align-self:flex-start}
+#btnLock.on{background:#b45309;color:#fff}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <div id="status" class="warn">Connexion…</div>
+    <div id="tools">
+      <button id="btnScreen" title="Choisir l'écran" aria-label="Choisir l'écran">🖥</button>
+      <button id="btnGame" title="Mode jeu (ZQSD)" aria-label="Mode jeu">🎮</button>
+      <button id="btnSound" title="Son" aria-label="Son">🔊</button>
+      <button id="btnFull" title="Plein écran" aria-label="Plein écran">⛶</button>
+      <button id="btnBar" title="Afficher/masquer les commandes" aria-label="Commandes">⌨</button>
+    </div>
+    <div id="screenMenu" hidden>
+      <div class="sm-title">Écran à diffuser</div>
+      <div id="screenList"></div>
+    </div>
+    <video id="video" autoplay playsinline></video>
+    <img id="frame" class="hide" alt="">
+    <div id="overlay"><button id="btnUnmute">🔊 Toucher pour activer le son</button></div>
+  </div>
+
+  <div id="bar">
+    <button data-k="esc">ESC</button><button data-k="tab">TAB</button>
+    <button data-k="enter">↵</button><button data-k="space">ESPACE</button>
+    <button data-k="backspace">⌫</button><button data-k="delete">DEL</button>
+
+    <button data-k="left">←</button><button data-k="up">↑</button>
+    <button data-k="down">↓</button><button data-k="right">→</button>
+    <button data-hot="alt+tab">ALT+TAB</button><button data-hot="ctrl+w">CTRL+W</button>
+
+    <button data-k="win">WIN</button><button data-hot="ctrl+c">CTRL+C</button>
+    <button data-hot="ctrl+v">CTRL+V</button><button data-hot="ctrl+z">CTRL+Z</button>
+    <button data-hot="alt+f4">ALT+F4</button><button data-k="f11">F11</button>
+
+    <input id="txt" placeholder="Écrire sur le PC…" autocomplete="off" autocapitalize="off"
+           autocorrect="off" spellcheck="false" enterkeyhint="send">
+    <button class="w2" data-act="send">Envoyer</button>
+
+    <button class="w2" data-click="left">🖱 CLIC GAUCHE</button>
+    <button class="w2" data-click="right">🖱 CLIC DROIT</button>
+    <button class="w2" data-act="dbl">🖱 DOUBLE-CLIC</button>
+
+    <button data-scroll="1">▲</button><button data-scroll="-1">▼</button>
+    <button data-act="drag" title="Glisser-déposer">✋ GLISSER</button>
+    <button data-k="volumedown">🔉</button><button data-k="volumeup">🔊</button>
+    <button data-k="volumemute">🔇 PC</button>
+  </div>
+
+  <div id="gamepad" hidden>
+    <button id="btnLock" title="Mode verrou : un tap enfonce, un autre relâche">🔓 MAINTIEN</button>
+    <div class="gp-group gp-move">
+      <button class="gp-key" data-k="z" style="grid-area:u">Z</button>
+      <button class="gp-key" data-k="q" style="grid-area:l">Q</button>
+      <button class="gp-key" data-k="s" style="grid-area:d">S</button>
+      <button class="gp-key" data-k="d" style="grid-area:r">D</button>
+    </div>
+    <div class="gp-group">
+      <button class="gp-key" data-k="space">ESPACE</button>
+      <button class="gp-key" data-k="shift">SHIFT</button>
+      <button class="gp-key" data-k="e">E</button>
+      <button class="gp-key" data-k="f">F</button>
+      <button class="gp-key" data-k="enter">↵</button>
+      <button class="gp-key" data-k="esc">ESC</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+'use strict';
+
+var $ = function (s) { return document.querySelector(s); };
+
+var stage      = $('#stage'),
+    video      = $('#video'),
+    frame      = $('#frame'),
+    statusEl   = $('#status'),
+    overlay    = $('#overlay'),
+    bar        = $('#bar'),
+    gamepad    = $('#gamepad'),
+    txt        = $('#txt'),
+    btnSound   = $('#btnSound'),
+    btnGame    = $('#btnGame'),
+    btnScreen  = $('#btnScreen'),
+    btnLock    = $('#btnLock'),
+    screenMenu = $('#screenMenu'),
+    screenList = $('#screenList');
+
+/* view = <video> (WebRTC) ou <img> (mode MJPEG) */
+var view = video;
+var mode = 'webrtc';                 // 'webrtc' | 'mjpeg' | 'poll'
+var muted = false;
+var everConnected = false;
+var webrtcFails = 0;
+var hasAudio = true;
+
+function setStatus(text, cls) { statusEl.textContent = text; statusEl.className = cls || ''; }
+
+/* =================================================================== envoi */
+var pc = null, dc = null, stream = null;
+
+function send(msg) {
+  if (dc && dc.readyState === 'open') {
+    try { dc.send(JSON.stringify(msg)); return; } catch (e) { /* repli HTTP */ }
+  }
+  fetch('/input', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                   body: JSON.stringify(msg)})
+    .catch(function () {});
+}
+
+/* ============================================= position sur l'écran du PC */
+function viewSize() {
+  if (view === video) return {w: video.videoWidth | 0, h: video.videoHeight | 0};
+  return {w: frame.naturalWidth | 0, h: frame.naturalHeight | 0};
+}
+
+function videoPoint(e, clamp) {
+  var s = viewSize();
+  if (!s.w || !s.h) return null;
+  var r = view.getBoundingClientRect();
+  var k = Math.min(r.width / s.w, r.height / s.h);
+  var cw = s.w * k, ch = s.h * k;
+  var x = (e.clientX - (r.left + (r.width - cw) / 2)) / cw;
+  var y = (e.clientY - (r.top + (r.height - ch) / 2)) / ch;
+  if (!clamp && (x < 0 || x > 1 || y < 0 || y > 1)) return null;
+  return {x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y))};
+}
+
+function isUi(el) {
+  return !!(el && el.closest && el.closest('#tools,#overlay,#gamepad,#screenMenu'));
+}
+
+/* ======================================================= souris / tactile */
+var MOVE_MS = 33, lastMove = 0, moveTimer = null, pendingMove = null;
+var dragMode = false, touch = null;
+var BTN = ['left', 'middle', 'right'];
+
+/* --- détection tap / double-tap / appui-long-maintenu --- */
+var TAP_WAIT = 240;              // délai avant d'envoyer un clic simple (ms)
+var TAP_DIST = 0.06;             // écart max entre 2 taps
+var HOLD_MS  = 400;              // au-delà, on garde le bouton gauche enfoncé
+var tapTimer = null, tapPos = null, tapTime = 0;
+
+function moveTo(p) {
+  pendingMove = p;
+  if (moveTimer) return;
+  var wait = Math.max(0, MOVE_MS - (performance.now() - lastMove));
+  moveTimer = setTimeout(function () {
+    moveTimer = null;
+    if (pendingMove) {
+      lastMove = performance.now();
+      send({t: 'move', x: pendingMove.x, y: pendingMove.y});
+      pendingMove = null;
+    }
+  }, wait);
+}
+
+function action(t, b, p) { pendingMove = null; send({t: t, b: b, x: p.x, y: p.y}); }
+
+function capture(id) { try { stage.setPointerCapture(id); } catch (e) {} }
+
+function cancelPendingTap() {
+  if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
+}
+
+function onDown(e) {
+  if (isUi(e.target)) return;
+  e.preventDefault();
+  if (mode !== 'webrtc') ensureAudio();
+  capture(e.pointerId);
+  var p = videoPoint(e, false);
+  if (!p) return;
+
+  if (e.pointerType === 'mouse') {          // vraie souris : comportement natif
+    cancelPendingTap();
+    action('down', BTN[e.button] || 'left', p);
+    return;
+  }
+  if (touch) return;                        // un seul doigt pour l'image
+
+  touch = {id: e.pointerId, x0: e.clientX, y0: e.clientY, p: p,
+           moved: false, holding: false, timer: null};
+
+  if (dragMode) {                           // mode ✋ GLISSER : appui immédiat
+    cancelPendingTap();
+    action('down', 'left', p);
+    return;
+  }
+
+  // Un simple tap déplace d'abord le curseur là où on a touché
+  send({t: 'move', x: p.x, y: p.y});
+
+  // Appui long : on GARDE le bouton gauche enfoncé jusqu'au relâchement
+  touch.timer = setTimeout(function () {
+    if (touch && !touch.holding) {
+      touch.holding = true;
+      if (navigator.vibrate) navigator.vibrate(30);
+      action('down', 'left', touch.p);
+    }
+  }, HOLD_MS);
+}
+
+function onMove(e) {
+  if (isUi(e.target)) return;
+  var p = videoPoint(e, true);
+  if (!p) return;
+  if (e.pointerType === 'mouse') { moveTo(p); return; }
+  if (!touch || touch.id !== e.pointerId) return;
+  if (!touch.moved && Math.hypot(e.clientX - touch.x0, e.clientY - touch.y0) > 12) {
+    touch.moved = true;
+  }
+  touch.p = p;
+  // En mode maintien (appui long en cours), on continue de bouger le curseur :
+  // le bouton reste enfoncé, ce qui fait un vrai drag.
+  if (touch.moved || dragMode || touch.holding) moveTo(p);
+}
+
+function onUp(e, cancelled) {
+  var p = videoPoint(e, true);
+
+  if (e.pointerType === 'mouse') {
+    if (p) action('up', BTN[e.button] || 'left', p);
+    return;
+  }
+
+  if (!touch || touch.id !== e.pointerId) return;
+  clearTimeout(touch.timer);
+  var t = touch;
+  touch = null;
+
+  // Appui long : on relâche le bouton gauche qu'on avait enfoncé
+  if (t.holding) {
+    action('up', 'left', p || t.p);
+    return;
+  }
+
+  if (dragMode) { cancelPendingTap(); action('up', 'left', p || t.p); return; }
+  if (cancelled || t.moved) return;          // geste annulé ou simple déplacement du curseur
+
+  var now = performance.now();
+
+  // 2e tap rapide au même endroit → double-clic
+  if (tapTimer && (now - tapTime) < TAP_WAIT &&
+      Math.hypot(t.p.x - tapPos.x, t.p.y - tapPos.y) < TAP_DIST) {
+    cancelPendingTap();
+    if (navigator.vibrate) navigator.vibrate(15);
+    action('dblclick', 'left', t.p);
+    return;
+  }
+
+  // 1er tap : on attend un court instant au cas où un 2e suivrait
+  cancelPendingTap();
+  tapPos = t.p;
+  tapTime = now;
+  tapTimer = setTimeout(function () {
+    tapTimer = null;
+    action('click', 'left', tapPos);
+  }, TAP_WAIT);
+}
+
+stage.addEventListener('pointerdown', onDown);
+stage.addEventListener('pointermove', onMove);
+stage.addEventListener('pointerup', function (e) { onUp(e, false); });
+stage.addEventListener('pointercancel', function (e) { onUp(e, true); });
+stage.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+/* --- repli si le navigateur n'a pas PointerEvent --- */
+if (!window.PointerEvent) {
+  (function () {
+    var synth = function (type, e, id, ptype) {
+      var t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+      var ev;
+      try { ev = new Event(type, {bubbles: true, cancelable: true}); }
+      catch (err) { ev = document.createEvent('Event'); ev.initEvent(type, true, true); }
+      ev.clientX = t.clientX; ev.clientY = t.clientY;
+      ev.pointerId = id; ev.pointerType = ptype; ev.button = e.button || 0;
+      ev.target = e.target;
+      ev.preventDefault = function () { if (e.preventDefault) e.preventDefault(); };
+      stage.dispatchEvent(ev);
+    };
+    var mid = 1, tid = -1;
+    stage.addEventListener('mousedown', function (e) { synth('pointerdown', e, mid++, 'mouse'); });
+    stage.addEventListener('mousemove', function (e) { synth('pointermove', e, 1, 'mouse'); });
+    stage.addEventListener('mouseup',   function (e) { synth('pointerup',   e, 1, 'mouse'); });
+    stage.addEventListener('touchstart', function (e) {
+      if (isUi(e.target)) return;
+      e.preventDefault();
+      synth('pointerdown', e, tid, 'touch');
+    }, {passive: false});
+    stage.addEventListener('touchmove', function (e) {
+      e.preventDefault();
+      synth('pointermove', e, tid, 'touch');
+    }, {passive: false});
+    var end = function (e) { e.preventDefault(); synth('pointerup', e, tid, 'touch'); tid = -1; };
+    stage.addEventListener('touchend', end, {passive: false});
+    stage.addEventListener('touchcancel', end, {passive: false});
+  })();
+}
+
+var lastWheel = 0;
+stage.addEventListener('wheel', function (e) {
+  e.preventDefault();
+  var now = performance.now();
+  if (now - lastWheel < 40) return;
+  lastWheel = now;
+  send({t: 'scroll', dy: e.deltaY > 0 ? -1 : 1});
+}, {passive: false});
+
+/* ============================================================ commandes */
+function sendText() {
+  if (!txt.value) return;
+  send({t: 'type', text: txt.value});
+  txt.value = '';
+}
+txt.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') { e.preventDefault(); sendText(); }
+});
+
+bar.addEventListener('click', function (e) {
+  var b = e.target.closest('button');
+  if (!b) return;
+  var d = b.dataset;
+  if (d.k) send({t: 'key', k: d.k});
+  else if (d.hot) send({t: 'hotkey', keys: d.hot.split('+')});
+  else if (d.click) send({t: 'click', b: d.click});
+  else if (d.act === 'dbl') send({t: 'dblclick', b: 'left'});
+  else if (d.act === 'send') sendText();
+  else if (d.act === 'drag') { dragMode = !dragMode; b.classList.toggle('on', dragMode); }
+});
+
+Array.prototype.forEach.call(bar.querySelectorAll('[data-scroll]'), function (b) {
+  var timer = null;
+  var stop = function () { clearInterval(timer); timer = null; };
+  var fire = function () { send({t: 'scroll', dy: Number(b.dataset.scroll) * 3}); };
+  b.addEventListener('pointerdown', function (e) {
+    e.preventDefault(); fire(); stop(); timer = setInterval(fire, 120);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (n) {
+    b.addEventListener(n, stop);
+  });
+});
+
+/* ========================================================= mode jeu (ZQSD) */
+/* Deux modes :
+   - MAINTIEN (defaut) : le doigt pose enfonce, le doigt leve relache.
+   - VERROU : un tap enfonce la touche, un second tap la relache. */
+var heldKeys = {};              // k -> true : touches actuellement enfoncees sur le PC
+var pointerToKey = {};          // pointerId -> k : quel doigt tient quelle touche
+var lockMode = false;
+
+function keyHoldDown(k) {
+  if (heldKeys[k]) return;
+  heldKeys[k] = true;
+  send({t: 'keydown', k: k});
+}
+function keyHoldUp(k) {
+  if (!heldKeys[k]) return;
+  delete heldKeys[k];
+  send({t: 'keyup', k: k});
+}
+function releaseAllHeld() {
+  Object.keys(heldKeys).forEach(keyHoldUp);
+  pointerToKey = {};
+  Array.prototype.forEach.call(gamepad.querySelectorAll('.gp-key.on'), function (el) {
+    el.classList.remove('on');
+  });
+}
+
+function gpButtonFrom(e) {
+  return e.target && e.target.closest ? e.target.closest('button[data-k]') : null;
+}
+
+function setLockMode(on) {
+  lockMode = on;
+  btnLock.textContent = on ? '🔒 VERROU' : '🔓 MAINTIEN';
+  btnLock.classList.toggle('on', on);
+  if (on) releaseAllHeld();
+}
+btnLock.addEventListener('click', function (e) {
+  e.preventDefault();
+  e.stopPropagation();
+  setLockMode(!lockMode);
+});
+
+function gpDown(e) {
+  var b = gpButtonFrom(e);
+  if (!b) return;
+  e.preventDefault();
+  if (mode !== 'webrtc') ensureAudio();
+  var k = b.dataset.k;
+  if (!k) return;
+
+  if (lockMode) {
+    if (heldKeys[k]) {
+      keyHoldUp(k);
+      b.classList.remove('on');
+    } else {
+      keyHoldDown(k);
+      b.classList.add('on');
+      if (navigator.vibrate) navigator.vibrate(15);
+    }
+    return;
+  }
+
+  try { gamepad.setPointerCapture(e.pointerId); } catch (err) {}
+  pointerToKey[e.pointerId] = k;
+  b.classList.add('on');
+  keyHoldDown(k);
+}
+
+function gpUp(e) {
+  if (lockMode) return;
+  var k = pointerToKey[e.pointerId];
+  if (!k) return;
+  delete pointerToKey[e.pointerId];
+  keyHoldUp(k);
+  Array.prototype.forEach.call(gamepad.querySelectorAll('button[data-k="' + k + '"]'), function (el) {
+    el.classList.remove('on');
+  });
+}
+
+gamepad.addEventListener('pointerdown', gpDown);
+gamepad.addEventListener('pointerup', gpUp);
+gamepad.addEventListener('pointercancel', gpUp);
+gamepad.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+window.addEventListener('blur', releaseAllHeld);
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden) releaseAllHeld();
+});
+
+/* Repli PointerEvent pour le pavé de jeu (navigateurs anciens) */
+if (!window.PointerEvent) {
+  (function () {
+    var synth = function (type, e, id, ptype) {
+      var t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+      var ev;
+      try { ev = new Event(type, {bubbles: true, cancelable: true}); }
+      catch (err) { ev = document.createEvent('Event'); ev.initEvent(type, true, true); }
+      ev.clientX = t.clientX; ev.clientY = t.clientY;
+      ev.pointerId = id; ev.pointerType = ptype; ev.button = e.button || 0;
+      ev.target = e.target;
+      ev.preventDefault = function () { if (e.preventDefault) e.preventDefault(); };
+      gamepad.dispatchEvent(ev);
+    };
+    var mid = 1, tid = -1;
+    gamepad.addEventListener('mousedown', function (e) { synth('pointerdown', e, mid++, 'mouse'); });
+    gamepad.addEventListener('mouseup',   function (e) { synth('pointerup',   e, 1, 'mouse'); });
+    gamepad.addEventListener('touchstart', function (e) {
+      if (e.target.closest && e.target.closest('#btnLock')) return;
+      e.preventDefault();
+      tid = e.changedTouches[0].identifier;
+      synth('pointerdown', e, tid, 'touch');
+    }, {passive: false});
+    var end = function (e) { e.preventDefault(); synth('pointerup', e, tid, 'touch'); tid = -1; };
+    gamepad.addEventListener('touchend', end, {passive: false});
+    gamepad.addEventListener('touchcancel', end, {passive: false});
+  })();
+}
+
+function setGameMode(on) {
+  gamepad.hidden = !on;
+  bar.hidden = on;
+  btnGame.classList.toggle('on', on);
+  if (!on) releaseAllHeld();
+}
+btnGame.addEventListener('click', function () {
+  var on = gamepad.hidden;
+  setGameMode(on);
+  if (on) send({t: 'focus'});        // force Roblox au premier plan
+});
+
+/* ====================================================== choix de l'écran */
+var currentMonitor = null;
+
+function openScreenMenu() {
+  fetch('/monitors', {cache: 'no-store'})
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.error) throw new Error(data.error);
+      currentMonitor = data.current;
+      screenList.innerHTML = '';
+      data.monitors.forEach(function (m) {
+        var b = document.createElement('button');
+        b.className = 'sm-item' + (m.index === currentMonitor ? ' on' : '');
+        b.textContent = m.label;
+        b.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          fetch('/monitor', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({index: m.index})
+          }).then(function () {
+            currentMonitor = m.index;
+            screenMenu.hidden = true;
+            setStatus('🖥 Écran ' + m.index + ' sélectionné', 'warn');
+          }).catch(function () {});
+        });
+        screenList.appendChild(b);
+      });
+      screenMenu.hidden = false;
+    })
+    .catch(function () { setStatus('🔴 Liste des écrans indisponible', 'bad'); });
+}
+
+btnScreen.addEventListener('click', function (e) {
+  e.stopPropagation();
+  if (screenMenu.hidden) openScreenMenu();
+  else screenMenu.hidden = true;
+});
+
+document.addEventListener('click', function (e) {
+  if (screenMenu.hidden) return;
+  if (screenMenu.contains(e.target) || e.target === btnScreen) return;
+  screenMenu.hidden = true;
+});
+
+/* ====================================================== son / affichage */
+function applyMuted() {
+  video.muted = muted;
+  if (again) again.gain.value = muted ? 0 : 1;
+  btnSound.textContent = muted ? '🔇' : '🔊';
+  btnSound.classList.toggle('off', muted);
+}
+
+function startPlayback() {
+  if (!video.play) return;
+  var p = video.play();
+  if (p && p.catch) {
+    p.catch(function () {
+      muted = true;
+      overlay.classList.add('show');
+      applyMuted();
+      video.play().catch(function () {});
+    });
+  }
+}
+
+$('#btnUnmute').addEventListener('click', function () {
+  muted = false;
+  overlay.classList.remove('show');
+  applyMuted();
+  if (mode === 'webrtc') video.play().catch(function () {});
+  else ensureAudio();
+});
+
+btnSound.addEventListener('click', function () {
+  muted = !muted;
+  if (!muted) overlay.classList.remove('show');
+  applyMuted();
+  if (mode === 'webrtc') video.play().catch(function () {});
+  else ensureAudio();
+});
+
+$('#btnBar').addEventListener('click', function () {
+  if (!gamepad.hidden) setGameMode(false);
+  bar.hidden = !bar.hidden;
+});
+
+var root = document.documentElement;
+var canFull = !!(root.requestFullscreen || root.webkitRequestFullscreen);
+if (!canFull) $('#btnFull').style.display = 'none';
+$('#btnFull').addEventListener('click', function () {
+  var d = document;
+  if (d.fullscreenElement || d.webkitFullscreenElement) {
+    (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+  } else {
+    (root.requestFullscreen || root.webkitRequestFullscreen).call(root);
+  }
+});
+document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+
+/* ================================================================= audio */
+var actx = null, again = null, schedTime = 0, pcmStarted = false, pcmAbort = false;
+
+function ensureAudio() {
+  if (actx) {
+    if (actx.state === 'suspended' && actx.resume) actx.resume();
+    if (!pcmStarted) { pcmStarted = true; pumpPcm(); }
+    return;
+  }
+  var AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) { hasAudio = false; return; }
+  try { actx = new AC(); } catch (e) { hasAudio = false; return; }
+  again = actx.createGain();
+  again.gain.value = muted ? 0 : 1;
+  again.connect(actx.destination);
+  schedTime = 0;
+  if (actx.state === 'suspended' && actx.resume) actx.resume();
+  if (!pcmStarted) { pcmStarted = true; pumpPcm(); }
+}
+
+function queuePcm(i16) {
+  if (!actx || !again || actx.state !== 'running') return;
+  var n = i16.length >> 1;
+  if (n <= 0) return;
+  var buf;
+  try { buf = actx.createBuffer(2, n, 48000); } catch (e) { return; }
+  var L = buf.getChannelData(0), R = buf.getChannelData(1);
+  for (var i = 0; i < n; i++) {
+    L[i] = i16[2 * i] / 32768;
+    R[i] = i16[2 * i + 1] / 32768;
+  }
+  var src = actx.createBufferSource();
+  src.buffer = buf;
+  src.connect(again);
+  var now = actx.currentTime;
+  if (schedTime < now + 0.02 || schedTime > now + 1.5) schedTime = now + 0.10;
+  try { src.start(schedTime); } catch (e) { return; }
+  schedTime += n / 48000;
+}
+
+function pushBytes(u8) {
+  if (u8.length & 1) {
+    if (u8.byteOffset & 1) { var c = new Uint8Array(u8.length); c.set(u8); u8 = c; }
+    queuePcm(new Int16Array(u8.buffer, u8.byteOffset, u8.length >> 1));
+    return u8.subarray(u8.length - 1);
+  }
+  if (u8.byteOffset & 1) { var d = new Uint8Array(u8.length); d.set(u8); u8 = d; }
+  queuePcm(new Int16Array(u8.buffer, u8.byteOffset, u8.length >> 1));
+  return null;
+}
+
+function pumpPcm() {
+  if (typeof fetch !== 'function') { xhrPump(); return; }
+  (function loop() {
+    if (pcmAbort) return;
+    fetch('/audio.pcm', {cache: 'no-store'}).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.body || !res.body.getReader) { xhrPump(); return; }
+      var reader = res.body.getReader(), tail = null;
+      (function read() {
+        reader.read().then(function (r) {
+          if (r.done) throw new Error('fin du flux');
+          var u8 = r.value;
+          if (tail) {
+            var m = new Uint8Array(tail.length + u8.length);
+            m.set(tail); m.set(u8, tail.length);
+            u8 = m; tail = null;
+          }
+          tail = pushBytes(u8);
+          read();
+        }).catch(function () { throw new Error('flux interrompu'); });
+      })();
+    }).catch(function () {
+      if (!pcmAbort) setTimeout(loop, 1000);
+    });
+  })();
+}
+
+function xhrPump() {
+  if (pcmAbort) return;
+  var xhr = new XMLHttpRequest();
+  var off = 0;
+  xhr.open('GET', '/audio.pcm');
+  xhr.responseType = 'arraybuffer';
+  xhr.onprogress = function () {
+    var b = xhr.response;
+    if (!b) return;
+    var avail = b.byteLength - off;
+    var n = avail & ~1;
+    if (n <= 0) return;
+    queuePcm(new Int16Array(b, off, n >> 1));
+    off += n;
+  };
+  var againLater = function () { if (!pcmAbort) setTimeout(xhrPump, 1000); };
+  xhr.onload = againLater;
+  xhr.onerror = againLater;
+  try { xhr.send(); } catch (e) { againLater(); }
+}
+
+/* ================================================================ WebRTC */
+var connecting = false, retryTimer = null, discTimer = null;
+
+function teardown() {
+  clearTimeout(discTimer);
+  if (dc) { try { dc.close(); } catch (e) {} dc = null; }
+  if (pc) { var old = pc; pc = null; try { old.close(); } catch (e) {} }
+  video.srcObject = null;
+  stream = null;
+}
+
+function scheduleRetry(delay) {
+  clearTimeout(retryTimer);
+  var d = delay !== undefined ? delay : Math.min(1000 * Math.pow(2, retryTimer), 8000);
+  retryTimer = setTimeout(connectWebRTC, d);
+}
+
+function iceComplete(conn, ms) {
+  return new Promise(function (resolve) {
+    if (conn.iceGatheringState === 'complete') return resolve();
+    var timer = null;
+    var done = function () {
+      conn.removeEventListener('icegatheringstatechange', check);
+      clearTimeout(timer);
+      resolve();
+    };
+    var check = function () { if (conn.iceGatheringState === 'complete') done(); };
+    timer = setTimeout(done, ms);
+    conn.addEventListener('icegatheringstatechange', check);
+  });
+}
+
+function onState(s) {
+  if (s === 'connected') {
+    everConnected = true;
+    webrtcFails = 0;
+    clearTimeout(discTimer);
+    if (hasAudio) setStatus('🟢 Connecté — écran + son', 'ok');
+    else setStatus('🟡 Connecté — écran seul (son indisponible)', 'warn');
+  } else if (s === 'connecting') {
+    setStatus('Connexion…', 'warn');
+  } else if (s === 'disconnected') {
+    setStatus('🟡 Connexion instable…', 'warn');
+    clearTimeout(discTimer);
+    discTimer = setTimeout(function () {
+      if (pc && pc.connectionState !== 'connected') connectWebRTC();
+    }, 6000);
+  } else if (s === 'failed' || s === 'closed') {
+    setStatus('🔴 Déconnecté — reconnexion…', 'bad');
+    scheduleRetry();
+  }
+}
+
+function connectWebRTC() {
+  if (connecting) return;
+  connecting = true;
+  clearTimeout(retryTimer);
+  teardown();
+  setStatus('Connexion…', 'warn');
+  var cur;
+  try {
+    cur = new RTCPeerConnection();
+  } catch (err) {
+    connecting = false;
+    startMjpeg();
+    return;
+  }
+  pc = cur;
+  stream = new MediaStream();
+  dc = cur.createDataChannel('input', {ordered: true});
+  cur.addTransceiver('video', {direction: 'recvonly'});
+  cur.addTransceiver('audio', {direction: 'recvonly'});
+  cur.ontrack = function (e) {
+    if (cur !== pc) return;
+    stream.addTrack(e.track);
+    if (video.srcObject !== stream) video.srcObject = stream;
+    startPlayback();
+  };
+  cur.onconnectionstatechange = function () { if (cur === pc) onState(cur.connectionState); };
+
+  cur.createOffer().then(function (o) { return cur.setLocalDescription(o); })
+    .then(function () { return iceComplete(cur, 2500); })
+    .then(function () {
+      return fetch('/offer', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({sdp: cur.localDescription.sdp, type: cur.localDescription.type})
+      });
+    })
+    .then(function (r) { return r.json().then(function (a) { return {r: r, a: a}; }); })
+    .then(function (x) {
+      if (!x.r.ok || x.a.error) throw new Error(x.a.error || ('HTTP ' + x.r.status));
+      hasAudio = x.a.audio !== false;
+      return cur.setRemoteDescription({sdp: x.a.sdp, type: x.a.type});
+    })
+    .catch(function (err) {
+      webrtcFails++;
+      if (!everConnected && webrtcFails >= 1) {
+        startMjpeg();
+        return;
+      }
+      setStatus('🔴 ' + (err && err.message ? err.message : err), 'bad');
+      scheduleRetry();
+    })
+    .then(function () { connecting = false; }, function () { connecting = false; });
+}
+
+/* ============================================ mode de secours (MJPEG/PCM) */
+function startMjpeg() {
+  if (mode === 'mjpeg' || mode === 'poll') return;
+  mode = 'mjpeg';
+  teardown();
+  view = frame;
+  video.classList.add('hide');
+  frame.classList.remove('hide');
+  setStatus('Connexion…', 'warn');
+
+  frame.onload = function () {
+    if (mode === 'mjpeg') setStatus('🟢 Connecté — écran seul', 'ok');
+  };
+  frame.onerror = function () {
+    if (mode === 'mjpeg') startPolling();
+  };
+  frame.src = '/video.mjpg?' + Date.now();
+
+  setTimeout(function () {
+    if (mode === 'mjpeg' && !frame.naturalWidth) startPolling();
+  }, 4000);
+}
+
+function startPolling() {
+  if (mode === 'poll') return;
+  mode = 'poll';
+  view = frame;
+  video.classList.add('hide');
+  frame.classList.remove('hide');
+  (function loop() {
+    if (mode !== 'poll') return;
+    var url = '/frame.jpg?' + Date.now();
+    var img = new Image();
+    img.onload = function () {
+      if (mode !== 'poll') return;
+      frame.src = url;
+      setStatus('🟢 Connecté — écran seul', 'ok');
+      setTimeout(loop, 33);
+    };
+    img.onerror = function () {
+      if (mode === 'poll') { setStatus('🔴 Capture indisponible…', 'bad'); setTimeout(loop, 700); }
+    };
+    img.src = url;
+  })();
+}
+
+/* ================================================================== boot */
+applyMuted();
+
+if (typeof window.RTCPeerConnection === 'function' && window.MediaStream) {
+  connectWebRTC();
+} else {
+  startMjpeg();
+}
+
+})();
+</script>
+</body>
+</html>
